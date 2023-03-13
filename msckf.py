@@ -316,7 +316,7 @@ class MSCKF(object):
         # Propogate the state using 4th order Runge-Kutta
         self.predict_new_state(dt, gyro, acc)
 
-        # Modify the transition matrix
+        # Modify the transition matrix  转移矩阵
         R_kk_1 = to_rotation(imu_state.orientation_null)
         Phi[:3, :3] = to_rotation(imu_state.orientation) @ R_kk_1.T
 
@@ -430,9 +430,9 @@ class MSCKF(object):
         self.state_server.cam_states[imu_state.id] = cam_state
 
         # Update the covariance matrix of the state.
-        # To simplify computation, the matrix J below is the nontrivial block
+        # To simplify computation, the matrix J below is the nontrivial block  非平凡的
         # in Equation (16) of "MSCKF" paper.
-        J = np.zeros((6, 21))
+        J = np.zeros((6, 21))  #新增加的相机状态只和IMU状态和外参有关
         J[:3, :3] = R_i_c
         J[:3, 15:18] = np.identity(3)
         J[3:6, :3] = skew(R_w_i.T @ t_c_i)
@@ -493,7 +493,7 @@ class MSCKF(object):
         # 3d feature position in the world frame.
         # And its observation with the stereo cameras.
         p_w = feature.position
-        z = feature.observations[cam_state_id]
+        z = feature.observations[cam_state_id]  #计算观测误差
 
         # Convert the feature position from the world frame to
         # the cam0 and cam1 frame.
@@ -524,8 +524,8 @@ class MSCKF(object):
         dpc0_dpg = R_w_c0
         dpc1_dpg = R_w_c1
 
-        H_x = dz_dpc0 @ dpc0_dxc + dz_dpc1 @ dpc1_dxc   # shape: (4, 6)
-        H_f = dz_dpc0 @ dpc0_dpg + dz_dpc1 @ dpc1_dpg   # shape: (4, 3)
+        H_x = dz_dpc0 @ dpc0_dxc + dz_dpc1 @ dpc1_dxc   # shape: (4, 6) 对相机cam0位姿的雅可比
+        H_f = dz_dpc0 @ dpc0_dpg + dz_dpc1 @ dpc1_dpg   # shape: (4, 3) 对特征点世界坐标的雅可比
 
         # Modifty the measurement Jacobian to ensure observability constrain.
         A = H_x   # shape: (4, 6)
@@ -626,7 +626,7 @@ class MSCKF(object):
         imu_state.gyro_bias += delta_x_imu[3:6]
         imu_state.velocity += delta_x_imu[6:9]
         imu_state.acc_bias += delta_x_imu[9:12]
-        imu_state.position += delta_x_imu[12:15]
+        imu_state.position += delta_x_imu[12:15]  ##imu_state的顺序是姿态，陀螺零偏，速度，加计零偏，位置
 
         dq_extrinsic = small_angle_quaternion(delta_x_imu[15:18])
         imu_state.R_imu_cam0 = to_rotation(dq_extrinsic) @ imu_state.R_imu_cam0
@@ -653,7 +653,7 @@ class MSCKF(object):
     def gating_test(self, H, r, dof):
         P1 = H @ self.state_server.state_cov @ H.T
         P2 = self.config.observation_noise * np.identity(len(H))
-        gamma = r @ np.linalg.solve(P1+P2, r)
+        gamma = r @ np.linalg.solve(P1+P2, r)  ##np.linalg.solve解x的形式为Ax=b
 
         if(gamma < self.chi_squared_test_table[dof]):
             return True
@@ -689,7 +689,7 @@ class MSCKF(object):
                     invalid_feature_ids.append(feature.id)
                     continue
 
-            jacobian_row_size += (4 * len(feature.observations) - 3)
+            jacobian_row_size += (4 * len(feature.observations) - 3) #一个特征点被feature.observations个相机观测到，4Mi-3，多个个特征就加多少（循环i）次是最后H矩阵的行数
             processed_feature_ids.append(feature.id)
 
         # Remove the features that do not have enough measurements.
@@ -713,10 +713,10 @@ class MSCKF(object):
             for cam_id, measurement in feature.observations.items():
                 cam_state_ids.append(cam_id)
 
-            H_xj, r_j = self.feature_jacobian(feature.id, cam_state_ids)
+            H_xj, r_j = self.feature_jacobian(feature.id, cam_state_ids)  ###H_xj.shape[0]行数 = 4Mi-3
 
-            if self.gating_test(H_xj, r_j, len(cam_state_ids)-1):
-                H_x[stack_count:stack_count+H_xj.shape[0], :H_xj.shape[1]] = H_xj
+            if self.gating_test(H_xj, r_j, len(cam_state_ids)-1):   ##卡方检验
+                H_x[stack_count:stack_count+H_xj.shape[0], :H_xj.shape[1]] = H_xj  ##H_xj.shape【1】列数=21+6*len(self.state_server.cam_states)
                 r[stack_count:stack_count+len(r_j)] = r_j
                 stack_count += H_xj.shape[0]
 
@@ -761,7 +761,7 @@ class MSCKF(object):
             angle = 2 * np.arccos(to_quaternion(
                 rotation @ key_rotation.T)[-1])
 
-            if angle < 0.2618 and distance < 0.4 and self.tracking_rate > 0.5:
+            if angle < 0.2618 and distance < 0.4 and self.tracking_rate > 0.5:  #判断是删除最早的帧还是临近帧
                 rm_cam_state_ids.append(cam_state_pairs[cam_state_idx][0])
                 cam_state_idx += 1
             else:
@@ -779,13 +779,13 @@ class MSCKF(object):
             return
 
         # Find two camera states to be removed.
-        rm_cam_state_ids = self.find_redundant_cam_states()
+        rm_cam_state_ids = self.find_redundant_cam_states()  ##确定需要删除的两帧相机位姿id
 
         # Find the size of the Jacobian matrix.
         jacobian_row_size = 0
         for feature in self.map_server.values():
             # Check how many camera states to be removed are associated
-            # with this feature.
+            # with this feature.  看每个特征和哪几个待删除的相机位姿相关
             involved_cam_state_ids = []
             for cam_id in rm_cam_state_ids:
                 if cam_id in feature.observations:
@@ -813,7 +813,7 @@ class MSCKF(object):
                         del feature.observations[cam_id]
                     continue
 
-            jacobian_row_size += 4*len(involved_cam_state_ids) - 3
+            jacobian_row_size += 4*len(involved_cam_state_ids) - 3   #只对待移除的相机位姿进行更新
 
         # Compute the Jacobian and residual.
         H_x = np.zeros((jacobian_row_size, 21+6*len(self.state_server.cam_states)))

@@ -110,7 +110,7 @@ class Feature(object):
         Returns:
             p: Computed feature position in c1 frame. (vec3)
         """
-        # Construct a least square problem to solve the depth.
+        # Construct a least square problem to solve the depth.  三角化实现，怎么完成的？ https://blog.csdn.net/liu2015302026/article/details/105340001
         m = T_c1_c2.R @ np.array([*z1, 1.0])
         a = m[:2] - z2*m[2]                   # vec2
         b = z2*T_c1_c2.t[2] - T_c1_c2.t[:2]   # vec2
@@ -212,10 +212,10 @@ class Feature(object):
             cam_poses_tmp.append(pose.inverse() * T_c0_w)
         cam_poses = cam_poses_tmp
 
-        # Generate initial guess
+        # Generate initial guess  用倒数第二个相机位姿和第一个相机位姿估计一个初始位置
         initial_position = self.generate_initial_guess(
             cam_poses[-2], measurements[0], measurements[-2])
-        solution = np.array([*initial_position[:2], 1.0]) / initial_position[2]
+        solution = np.array([*initial_position[:2], 1.0]) / initial_position[2]  ##逆深度表达
 
         # Apply Levenberg-Marquart method to solve for the 3d position.
         lambd = self.optimization_config.initial_damping
